@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <title>마무리 다이어리</title>
+  <meta name="description" content="하루를 조각으로 나누고, 발산은 인박스로, 하루 1개는 반드시 끝내는 개인 다이어리">
+  <meta name="theme-color" content="#d9467a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="마무리">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <header class="top">
+    <div>
+      <h1>🍰 마무리 다이어리</h1>
+      <p id="today-label" class="muted"></p>
+    </div>
+    <div class="chips">
+      <span id="streak-chip" class="chip" title="오늘의 1개를 끝낸 연속 일수"></span>
+      <span id="wip-chip" class="chip" title="진행 중 프로젝트 / 한도"></span>
+      <button id="settings-btn" class="icon-btn" aria-label="설정">⚙️</button>
+    </div>
+  </header>
+
+  <main id="view" tabindex="-1"></main>
+
+  <button id="fab" class="fab" aria-label="아이디어 던져두기">💡</button>
+
+  <nav class="tabs" aria-label="메뉴">
+    <button data-view="today">🏠<span>오늘</span></button>
+    <button data-view="projects">📂<span>프로젝트</span></button>
+    <button data-view="inbox">💡<span>인박스</span></button>
+    <button data-view="records">📈<span>기록</span></button>
+    <button data-view="wrap">🌙<span>정리</span></button>
+  </nav>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <div id="modal" class="modal" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="sheet-head"><h2 id="modal-title"></h2><button class="icon-btn" id="modal-close" aria-label="닫기">✕</button></div>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+  <noscript>자바스크립트를 켜야 사용할 수 있어요.</noscript>
+</body>
+</html>
