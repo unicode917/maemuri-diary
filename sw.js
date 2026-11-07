@@ -1,5 +1,5 @@
 // 오프라인용 앱 셸 캐시. 데이터는 localStorage라 여기서 다루지 않음. 파일 바꾸면 VERSION 올리기.
-const VERSION = 'maemuri-v4';
+const VERSION = 'maemuri-v5';
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'logic.js', 'store.js', 'manifest.webmanifest',
   'icons/icon.svg', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png'];
 

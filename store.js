@@ -71,11 +71,59 @@ export function load(storage) {
 export function save(storage, s) { storage.setItem(KEY, JSON.stringify(s)); }
 
 export function exportJSON(s) { return JSON.stringify({ ...s, app: 'maemuri', exportedAt: nowIso() }); }
+// ── 가져오기 검문 (동기화 파일은 남이 보낸 파일일 수도 있다고 가정) ───────
+const BAD_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+const ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const MU_RE = /^(?:settings|pieces|quotes|(?:journal|body|focus):\d{4}-\d{2}-\d{2}|checks:\d{4}-\d{2}-\d{2}:[A-Za-z0-9_-]{1,40})$/;
+export const isSafeUrl = (u) => typeof u === 'string' && /^https:\/\/[^\s]+$/i.test(u);
+const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
+const num = (x) => (Number.isFinite(x) ? x : 0);
+const strs = (a) => (Array.isArray(a) ? a.filter((x) => typeof x === 'string') : []);
+const dict = (o, keyOk, valOk) => Object.fromEntries(Object.entries(isObj(o) ? o : {}).filter(([k, v]) => keyOk(k) && valOk(v)));
+const records = (a, extra = () => true) => (Array.isArray(a) ? a : []).filter((r) => isObj(r) && typeof r.id === 'string' && ID_RE.test(r.id) && extra(r))
+  .map((r) => ({ ...r, ...('u' in r ? { u: num(r.u) } : {}), ...('created' in r ? { created: typeof r.created === 'string' ? r.created : nowIso() } : {}) }));
+
+/** 형식이 맞는 것만 남긴다: 위험 키 제거, id·날짜·링크·숫자 검사. 버려진 건 조용히 무시. */
+function sanitize(d) {
+  const f = freshState();
+  const set = isObj(d.settings) ? d.settings : {};
+  return {
+    ...f,
+    settings: {
+      ...f.settings,
+      ...Object.fromEntries(['wake', 'breakfast', 'lunch', 'dinner', 'sleep'].filter((k) => typeof set[k] === 'string' && /^(\d{2}:\d{2})?$/.test(set[k])).map((k) => [k, set[k]])),
+      ...Object.fromEntries(['mealMinutes', 'wipLimit', 'coolingHours'].filter((k) => Number.isFinite(set[k]) && set[k] >= 0 && set[k] <= 1440).map((k) => [k, set[k]])),
+      ...(Array.isArray(set.tags) ? { tags: strs(set.tags).slice(0, 30) } : {}),
+    },
+    pieces: Array.isArray(d.pieces) ? records(d.pieces).map((p) => ({ id: p.id, name: String(p.name ?? ''), minutes: num(p.minutes), checklist: strs(p.checklist) })) : f.pieces,
+    quotes: Array.isArray(d.quotes) ? strs(d.quotes) : f.quotes,
+    projects: records(d.projects),
+    tasks: records(d.tasks, (t) => t.projectId == null || (typeof t.projectId === 'string' && ID_RE.test(t.projectId))),
+    ideas: records(d.ideas),
+    trackers: records(d.trackers).map((t) => ({ ...t, logs: records(t.logs, (g) => DAY_RE.test(g.day) && Number.isFinite(g.amount)) })),
+    worklog: records(d.worklog, (w) => DAY_RE.test(w.day) && ['완성', '보관', '다음'].includes(w.section)),
+    brain: records(d.brain, (n) => DAY_RE.test(n.day)),
+    links: records(d.links, (l) => isSafeUrl(l.url)),
+    journal: dict(d.journal, (k) => DAY_RE.test(k), (v) => typeof v === 'string'),
+    focus: dict(d.focus, (k) => DAY_RE.test(k), (v) => typeof v === 'string' && ID_RE.test(v)),
+    body: dict(d.body, (k) => DAY_RE.test(k), isObj),
+    checks: dict(d.checks, (k) => DAY_RE.test(k), isObj),
+    mu: dict(d.mu, (k) => MU_RE.test(k), Number.isFinite),
+    deleted: dict(d.deleted, (k) => ID_RE.test(k), Number.isFinite),
+    lastBackup: typeof d.lastBackup === 'string' && DAY_RE.test(d.lastBackup) ? d.lastBackup : null,
+    lastSync: typeof d.lastSync === 'string' && DAY_RE.test(d.lastSync) ? d.lastSync : null,
+  };
+}
+
 export function parseExport(raw) {
   let d;
-  try { d = JSON.parse(raw); } catch { throw new RuleError('파일 내용을 읽지 못했어요. 마무리 다이어리에서 내보낸 파일인지 확인하세요.'); }
-  if (!d || d.app !== 'maemuri' || d.v !== VERSION || !Array.isArray(d.tasks)) throw new RuleError('마무리 다이어리 동기화 파일이 아니에요.');
-  return { ...freshState(), ...d };
+  // reviver로 __proto__·constructor·prototype 키를 파싱 단계에서 버린다 (프로토타입 오염 차단)
+  try { d = JSON.parse(raw, (k, v) => (BAD_KEYS.has(k) ? undefined : v)); } catch { throw new RuleError('파일 내용을 읽지 못했어요. 마무리 다이어리에서 내보낸 파일인지 확인하세요.'); }
+  if (!isObj(d) || d.app !== 'maemuri' || d.v !== VERSION || !Array.isArray(d.tasks)) throw new RuleError('마무리 다이어리 동기화 파일이 아니에요.');
+  const clean = sanitize(d);
+  for (const [day, byPiece] of Object.entries(clean.checks)) clean.checks[day] = dict(byPiece, (k) => ID_RE.test(k), Array.isArray);
+  return clean;
 }
 
 // ── 기기 간 병합 ───────────────────────────────────────────
@@ -85,7 +133,7 @@ const newer = (x, y) => ((y.u || 0) > (x.u || 0) ? y : x);
 export function merge(local, remote) {
   const out = structuredClone(local);
   let added = 0, updated = 0;
-  for (const [id, t] of Object.entries(remote.deleted || {})) out.deleted[id] = Math.max(out.deleted[id] || 0, t);
+  for (const [id, t] of Object.entries(remote.deleted || {})) if (ID_RE.test(id)) out.deleted[id] = Math.max(out.deleted[id] || 0, t);
   const alive = (x) => !(out.deleted[x.id] >= (x.u || 0));
 
   for (const c of COLLECTIONS) {
@@ -115,6 +163,7 @@ export function merge(local, remote) {
     const keys = new Set([...Object.keys(local[m]), ...Object.keys(remote[m] || {}),
       ...Object.keys(remote.mu || {}).filter((k) => k.startsWith(`${m}:`)).map((k) => k.slice(m.length + 1))]);
     for (const k of keys) {
+      if (!DAY_RE.test(k)) continue;
       const [v, fromRemote] = pick(`${m}:${k}`, local[m][k], remote[m]?.[k], true);
       if (fromRemote) { if (v === undefined) delete out[m][k]; else out[m][k] = v; }
     }
@@ -122,6 +171,7 @@ export function merge(local, remote) {
   const checkKeys = new Set([...Object.keys(remote.mu || {}), ...Object.keys(local.mu)].filter((k) => k.startsWith('checks:')));
   for (const k of checkKeys) {
     const [, day, pid] = k.split(':');
+    if (!DAY_RE.test(day) || !ID_RE.test(pid ?? '')) continue;
     const [v, fromRemote] = pick(k, local.checks[day]?.[pid], remote.checks?.[day]?.[pid], true);
     if (fromRemote) (out.checks[day] ||= {})[pid] = v || [];
   }

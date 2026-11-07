@@ -435,7 +435,7 @@ function body() {
 function rest() {
   const name = h('input', { placeholder: '이름 (예: 전방경사 10분)', maxlength: 60 }), url = h('input', { type: 'url', placeholder: 'https://www.youtube.com/...' });
   return [card({}, h('h2', {}, '🛋️ 휴식 링크'), h('p', { class: 'muted small' }, '요가 영상·플레이리스트·보고 싶은 것. 휴식 조각에서 고민 없이 바로 누르기.'),
-    st.links.map((l) => h('div', { class: 'check' }, h('a', { class: 'txt', href: l.url, target: '_blank', rel: 'noopener noreferrer' }, l.name),
+    st.links.map((l) => h('div', { class: 'check' }, S.isSafeUrl(l.url) ? h('a', { class: 'txt', href: l.url, target: '_blank', rel: 'noopener noreferrer' }, l.name) : h('span', { class: 'txt muted' }, `${l.name} (안전하지 않은 링크라 막음)`),
       h('button', { class: 'mini ghost', onclick: () => commit((x) => S.deleteLink(x, l.id)) }, '✕'))),
     h('div', { class: 'stack' }, name, url, h('button', { onclick: () => commit((x) => S.addLink(x, name.value, url.value), '넣었어요') }, '넣기')))];
 }

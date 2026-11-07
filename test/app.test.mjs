@@ -191,3 +191,50 @@ test('병합: 날짜별 값·설정은 더 최근 쪽, 오늘의 1개 해제도 
   assert.equal(back.settings.wipLimit, 2);
   assert.equal(back.focus['2026-10-24'], undefined);
 });
+
+// ── 가져오기 검문 (조작된 동기화 파일) ─────────────────────
+const evil = (extra) => JSON.stringify({ app: 'maemuri', v: 2, tasks: [], ...extra });
+
+test('검문: __proto__ 키로 프로토타입 오염 불가', () => {
+  const raw = '{"app":"maemuri","v":2,"tasks":[],"checks":{"__proto__":{"polluted":"PWNED"}},"mu":{"checks:__proto__:polluted":9e15},"__proto__":{"x":1},"settings":{"constructor":{"prototype":{"y":2}}}}';
+  const { state } = S.merge(S.freshState(), S.parseExport(raw));
+  assert.equal(({}).polluted, undefined);
+  assert.equal(({}).x, undefined);
+  assert.equal(({}).y, undefined);
+  assert.equal(Object.prototype.hasOwnProperty.call(state.checks, '__proto__'), false);
+});
+
+test('검문: https 아닌 링크·잘못된 id·날짜는 버림', () => {
+  const r = S.parseExport(evil({
+    links: [{ id: 'a1', u: 1, name: 'x', url: 'javascript:alert(1)' }, { id: 'a2', u: 1, name: 'y', url: 'data:text/html,hi' }, { id: 'a3', u: 1, name: 'ok', url: 'https://example.com/v' }],
+    ideas: [{ id: '<img src=x>', text: 'bad id', created: '2026-01-01' }, { id: 'ok1', text: 'fine', created: 5 }],
+    journal: { '2026-10-24': 'ok', 'nope': 'x', '2026-10-25': { obj: 1 } },
+    focus: { '2026-10-24': 'not valid id!' },
+    mu: { 'settings': 1, 'evil:key': 2, 'journal:2026-10-24': 'NaN' },
+    deleted: { 'ok2': 5, '../x': 6 },
+    settings: { wipLimit: 'abc', tags: ['a', { b: 1 }], wake: '<b>' },
+  }));
+  assert.deepEqual(r.links.map((l) => l.id), ['a3']);
+  assert.deepEqual(r.ideas.map((i) => i.id), ['ok1']);
+  assert.equal(typeof r.ideas[0].created, 'string');
+  assert.deepEqual(Object.keys(r.journal), ['2026-10-24']);
+  assert.deepEqual(r.focus, {});
+  assert.deepEqual(Object.keys(r.mu), ['settings']);
+  assert.deepEqual(Object.keys(r.deleted), ['ok2']);
+  assert.equal(r.settings.wipLimit, 3);
+  assert.deepEqual(r.settings.tags, ['a']);
+  assert.equal(r.settings.wake, '07:00');
+  assert.ok(S.isSafeUrl('https://youtube.com/x') && !S.isSafeUrl('javascript:alert(1)') && !S.isSafeUrl(' https://x'));
+});
+
+test('검문: 정상 동기화 파일은 그대로 통과 (왕복 손실 없음)', () => {
+  const a = S.freshState();
+  S.addTask(a, { title: 't', due: '2026-10-24', tag: '업무' });
+  S.addLink(a, '요가', 'https://www.youtube.com/watch?v=abc');
+  S.addTracker(a, { name: 'n', unit: '장', total: 10, start: '2026-10-20', target: '2026-10-30' });
+  S.logTracker(a, a.trackers[0].id, '2026-10-24', 2);
+  S.toggleCheck(a, '2026-10-24', 'p1', '스트레칭 10분', true);
+  S.saveJournal(a, '2026-10-24', '일기');
+  const r = S.parseExport(S.exportJSON(a));
+  for (const k of ['tasks', 'links', 'trackers', 'checks', 'journal', 'mu', 'pieces', 'settings', 'quotes']) assert.deepEqual(r[k], a[k], k);
+});
